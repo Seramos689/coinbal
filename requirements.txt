@@ -1,0 +1,7 @@
+lightweight-charts>=2.0
+pandas>=2.0
+numpy>=1.24
+ccxt>=4.0
+websocket-client>=1.6
+python-dateutil>=2.8
+ta>=0.11.0
