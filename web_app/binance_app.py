@@ -51,10 +51,28 @@ UPDATE_MS = 1500
 ORDERBOOK_LIMIT = 12          # rows each side
 
 # Global state (simple process-local cache)
-_exchange = trader.exchange or ccxt.bybit({
-    "enableRateLimit": True,
-    "options": {"defaultType": "spot"},
-})
+def _get_working_exchange():
+    """Try several exchanges until one responds (cloud IPs are often blocked)."""
+    candidates = [
+        ("okx",     {"enableRateLimit": True}),
+        ("kucoin",  {"enableRateLimit": True}),
+        ("gate",    {"enableRateLimit": True}),
+        ("bybit",   {"enableRateLimit": True, "options": {"defaultType": "spot"}}),
+        ("binance", {"enableRateLimit": True}),
+    ]
+    for name, cfg in candidates:
+        try:
+            ex = getattr(ccxt, name)(cfg)
+            # quick test
+            ex.fetch_ticker("BTC/USDT")
+            print(f"[Exchange] Using {name.upper()}")
+            return ex
+        except Exception as e:
+            print(f"[Exchange] {name} failed: {str(e)[:60]}")
+    print("[Exchange] WARNING: falling back to okx")
+    return ccxt.okx({"enableRateLimit": True})
+
+_exchange = trader.exchange or _get_working_exchange()
 _feed = None
 _last_ticker = {}
 
@@ -205,12 +223,17 @@ app = dash.Dash(
 print("Loading initial data …")
 try:
     INIT_SERIES, _ = load_chart_series(DEFAULT_SYMBOL, DEFAULT_TF)
+    candle_count = len(INIT_SERIES[0]["data"]) if INIT_SERIES else 0
     INIT_TICKER = fetch_ticker(DEFAULT_SYMBOL)
     INIT_ASKS, INIT_BIDS = fetch_orderbook(DEFAULT_SYMBOL)
     INIT_TRADES = fetch_recent_trades(DEFAULT_SYMBOL)
-    print(f"Ready – {DEFAULT_SYMBOL}")
+    print(f"Ready – {DEFAULT_SYMBOL} | {candle_count} candles loaded")
+    if candle_count == 0:
+        print("WARNING: 0 candles – chart will be empty. Check exchange access.")
 except Exception as e:
     print(f"Init warning: {e}")
+    import traceback
+    traceback.print_exc()
     INIT_SERIES = [{"id": "price", "type": "candlestick", "data": []}]
     INIT_TICKER = {}
     INIT_ASKS, INIT_BIDS = [], []
