@@ -171,10 +171,11 @@ def load_chart_series(symbol: str, timeframe: str):
 def fetch_orderbook(symbol: str, limit: int = ORDERBOOK_LIMIT):
     try:
         ob = _exchange.fetch_order_book(symbol, limit=limit)
-        asks = sorted(ob["asks"], key=lambda x: x[0])[:limit]          # low → high
-        bids = sorted(ob["bids"], key=lambda x: x[0], reverse=True)[:limit]  # high → low
+        asks = sorted(ob.get("asks") or [], key=lambda x: x[0])[:limit]
+        bids = sorted(ob.get("bids") or [], key=lambda x: x[0], reverse=True)[:limit]
         return asks, bids
-    except Exception:
+    except Exception as e:
+        print(f"[orderbook] {e}")
         return [], []
 
 
@@ -205,7 +206,8 @@ def fetch_ticker(symbol: str):
             "baseVolume": t.get("baseVolume"),
             "quoteVolume": t.get("quoteVolume"),
         }
-    except Exception:
+    except Exception as e:
+        print(f"[ticker] {e}")
         return {}
 
 
@@ -527,45 +529,50 @@ def live_tick(n, series, symbol, tf):
     if not series:
         return no_update, no_update, no_update, no_update, no_update
 
-    # 1. Update last candle
     try:
-        latest = _exchange.fetch_ohlcv(symbol, timeframe=tf, limit=2)
-        if latest:
-            ts, o, h, l, c, v = latest[-1]
-            bar = {"time": int(ts / 1000), "open": float(o), "high": float(h),
-                   "low": float(l), "close": float(c)}
-            series = copy.deepcopy(series)
-            price_data = series[0]["data"]
-            if price_data and price_data[-1]["time"] == bar["time"]:
-                price_data[-1] = bar
-            else:
-                price_data.append(bar)
-
-            # volume
-            if len(series) > 1 and series[1]["id"] == "volume":
-                color = "rgba(14,203,129,0.5)" if c >= o else "rgba(246,70,93,0.5)"
-                vol_pt = {"time": bar["time"], "value": float(v), "color": color}
-                vd = series[1]["data"]
-                if vd and vd[-1]["time"] == bar["time"]:
-                    vd[-1] = vol_pt
+        # 1. Update last candle
+        try:
+            latest = _exchange.fetch_ohlcv(symbol, timeframe=tf, limit=2)
+            if latest:
+                ts, o, h, l, c, v = latest[-1]
+                bar = {"time": int(ts / 1000), "open": float(o), "high": float(h),
+                       "low": float(l), "close": float(c)}
+                series = copy.deepcopy(series)
+                price_data = series[0]["data"]
+                if price_data and price_data[-1]["time"] == bar["time"]:
+                    price_data[-1] = bar
                 else:
-                    vd.append(vol_pt)
-    except Exception:
-        pass
+                    price_data.append(bar)
 
-    # 2. Order book + trades + ticker
-    asks, bids = fetch_orderbook(symbol)
-    trades = fetch_recent_trades(symbol)
-    ticker = fetch_ticker(symbol)
+                # volume
+                if len(series) > 1 and series[1]["id"] == "volume":
+                    color = "rgba(14,203,129,0.5)" if c >= o else "rgba(246,70,93,0.5)"
+                    vol_pt = {"time": bar["time"], "value": float(v), "color": color}
+                    vd = series[1]["data"]
+                    if vd and vd[-1]["time"] == bar["time"]:
+                        vd[-1] = vol_pt
+                    else:
+                        vd.append(vol_pt)
+        except Exception as e:
+            print(f"[live_tick candle] {e}")
 
-    ob_panel = render_orderbook(asks, bids, ticker.get("last"))
-    trades_panel = render_trades(trades)
-    header = render_header(symbol, ticker)
+        # 2. Order book + trades + ticker
+        asks, bids = fetch_orderbook(symbol)
+        trades = fetch_recent_trades(symbol)
+        ticker = fetch_ticker(symbol)
 
-    # Refresh open orders every few ticks (keeps UI light)
-    open_orders_ui = _render_open_orders(symbol) if n % 4 == 0 else no_update
+        ob_panel = render_orderbook(asks, bids, ticker.get("last"))
+        trades_panel = render_trades(trades)
+        header = render_header(symbol, ticker)
 
-    return series, ob_panel, trades_panel, header, open_orders_ui
+        # Refresh open orders every few ticks
+        open_orders_ui = _render_open_orders(symbol) if n % 4 == 0 else no_update
+
+        return series, ob_panel, trades_panel, header, open_orders_ui
+
+    except Exception as e:
+        print(f"[live_tick] unexpected error: {e}")
+        return no_update, no_update, no_update, no_update, no_update
 
 
 # Buy / Sell tab switching
