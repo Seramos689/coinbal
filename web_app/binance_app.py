@@ -318,12 +318,19 @@ def render_header(symbol, ticker):
 
 
 def render_orderbook(asks, bids, last_price=None):
-    # max quantity for depth bar scaling
-    all_qty = [a[1] for a in asks] + [b[1] for b in bids]
+    # Some exchanges return [price, qty] others return [price, qty, extra...]
+    # Always take only the first two values
+    def _pq(entry):
+        return float(entry[0]), float(entry[1])
+
+    clean_asks = [_pq(a) for a in asks if len(a) >= 2]
+    clean_bids = [_pq(b) for b in bids if len(b) >= 2]
+
+    all_qty = [q for _, q in clean_asks] + [q for _, q in clean_bids]
     max_qty = max(all_qty) if all_qty else 1
 
     ask_rows = []
-    for price, qty in reversed(asks):          # highest ask at top
+    for price, qty in reversed(clean_asks):          # highest ask at top
         pct = min(qty / max_qty * 100, 100)
         ask_rows.append(html.Tr([
             html.Td(f"{price:,.2f}", className="price"),
@@ -333,7 +340,7 @@ def render_orderbook(asks, bids, last_price=None):
         ], className="ob-ask"))
 
     bid_rows = []
-    for price, qty in bids:
+    for price, qty in clean_bids:
         pct = min(qty / max_qty * 100, 100)
         bid_rows.append(html.Tr([
             html.Td(f"{price:,.2f}", className="price"),
@@ -342,8 +349,7 @@ def render_orderbook(asks, bids, last_price=None):
             html.Td(html.Div(className="ob-depth-bar", style={"width": f"{pct}%"})),
         ], className="ob-bid"))
 
-    mid_price = last_price or (asks[0][0] if asks else 0)
-    mid_cls = "up" if True else "down"
+    mid_price = last_price or (clean_asks[0][0] if clean_asks else 0)
 
     return html.Div([
         html.Div("Order Book", className="panel-title"),
