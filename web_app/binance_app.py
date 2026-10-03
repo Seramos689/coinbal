@@ -38,7 +38,7 @@ import pandas as pd
 import ccxt
 
 from utils.data_feed import BinanceDataFeed
-from utils.indicators import add_sma, add_ema, add_bollinger
+from utils.indicators import add_sma, add_ema, add_bollinger, add_rsi, add_macd
 from trading import trader   # real / testnet / simulation order execution
 
 # ============================================================
@@ -117,13 +117,27 @@ def df_to_line(df: pd.DataFrame, col: str) -> list:
     return out
 
 
-def load_chart_series(symbol: str, timeframe: str):
+def load_chart_series(symbol: str, timeframe: str, indicators=None):
+    """Build chart series. indicators dict controls which overlays/panes are shown."""
     global _feed
+    if indicators is None:
+        indicators = {
+            "sma": True, "ema": True, "bb": True,
+            "rsi": True, "macd": True, "volume": True,
+        }
+
     _feed = BinanceDataFeed(symbol=symbol, timeframe=timeframe)
     df = _feed.fetch_historical(limit=HISTORY_LIMIT)
+
+    # Always compute indicators we might need
     df = add_sma(df, 7)
     df = add_sma(df, 25)
     df = add_sma(df, 99)
+    df = add_ema(df, 12)
+    df = add_ema(df, 26)
+    df = add_bollinger(df, 20)
+    df = add_rsi(df, 14)
+    df = add_macd(df)
 
     series = [
         {
@@ -139,34 +153,119 @@ def load_chart_series(symbol: str, timeframe: str):
                 "wickDownColor": "#f6465d",
             },
         },
-        {
+    ]
+
+    if indicators.get("volume", True):
+        series.append({
             "id": "volume",
             "type": "histogram",
             "data": df_to_volume(df),
             "options": {"priceFormat": {"type": "volume"}, "priceScaleId": ""},
             "pane": 1,
-        },
-        {
+        })
+
+    if indicators.get("sma", True):
+        series.append({
             "id": "ma7",
             "type": "line",
             "data": df_to_line(df, "SMA_7"),
             "options": {"color": "#f0b90b", "lineWidth": 1},
-        },
-        {
+        })
+        series.append({
             "id": "ma25",
             "type": "line",
             "data": df_to_line(df, "SMA_25"),
             "options": {"color": "#a855f7", "lineWidth": 1},
-        },
-        {
+        })
+        series.append({
             "id": "ma99",
             "type": "line",
             "data": df_to_line(df, "SMA_99"),
             "options": {"color": "#06b6d4", "lineWidth": 1},
-        },
-    ]
-    return series, df
+        })
 
+    if indicators.get("ema", True):
+        series.append({
+            "id": "ema12",
+            "type": "line",
+            "data": df_to_line(df, "EMA_12"),
+            "options": {"color": "#22c55e", "lineWidth": 1, "lineStyle": 2},
+        })
+        series.append({
+            "id": "ema26",
+            "type": "line",
+            "data": df_to_line(df, "EMA_26"),
+            "options": {"color": "#ef4444", "lineWidth": 1, "lineStyle": 2},
+        })
+
+    if indicators.get("bb", True):
+        series.append({
+            "id": "bb_upper",
+            "type": "line",
+            "data": df_to_line(df, "BB_UPPER_20"),
+            "options": {"color": "rgba(59,130,246,0.7)", "lineWidth": 1, "lineStyle": 1},
+        })
+        series.append({
+            "id": "bb_mid",
+            "type": "line",
+            "data": df_to_line(df, "BB_MID_20"),
+            "options": {"color": "rgba(59,130,246,0.4)", "lineWidth": 1, "lineStyle": 2},
+        })
+        series.append({
+            "id": "bb_lower",
+            "type": "line",
+            "data": df_to_line(df, "BB_LOWER_20"),
+            "options": {"color": "rgba(59,130,246,0.7)", "lineWidth": 1, "lineStyle": 1},
+        })
+
+    # RSI pane
+    next_pane = 2 if indicators.get("volume", True) else 1
+    if indicators.get("rsi", True):
+        series.append({
+            "id": "rsi",
+            "type": "line",
+            "data": df_to_line(df, "RSI_14"),
+            "options": {
+                "color": "#f59e0b",
+                "lineWidth": 1,
+                "priceScaleId": "rsi",
+            },
+            "pane": next_pane,
+        })
+        next_pane += 1
+
+    # MACD pane
+    if indicators.get("macd", True):
+        series.append({
+            "id": "macd",
+            "type": "line",
+            "data": df_to_line(df, "MACD"),
+            "options": {"color": "#3b82f6", "lineWidth": 1, "priceScaleId": "macd"},
+            "pane": next_pane,
+        })
+        series.append({
+            "id": "macd_signal",
+            "type": "line",
+            "data": df_to_line(df, "MACD_SIGNAL"),
+            "options": {"color": "#f97316", "lineWidth": 1, "priceScaleId": "macd"},
+            "pane": next_pane,
+        })
+        series.append({
+            "id": "macd_hist",
+            "type": "histogram",
+            "data": [
+                {
+                    "time": ts_to_unix(r["time"]),
+                    "value": float(r["MACD_HIST"]),
+                    "color": "rgba(14,203,129,0.6)" if r["MACD_HIST"] >= 0 else "rgba(246,70,93,0.6)",
+                }
+                for _, r in df.iterrows() if pd.notna(r.get("MACD_HIST"))
+            ],
+            "options": {"priceScaleId": "macd"},
+            "pane": next_pane,
+        })
+
+    return series, df
 
 def fetch_orderbook(symbol: str, limit: int = ORDERBOOK_LIMIT):
     try:
@@ -443,13 +542,37 @@ app.layout = html.Div([
 
     # Main trading grid
     html.Div([
-        # Chart
+        # Chart + zoom controls
         html.Div([
+            html.Div([
+                html.Button("−", id="zoom-out-btn", n_clicks=0, title="Zoom out", className="zoom-btn"),
+                html.Button("+", id="zoom-in-btn", n_clicks=0, title="Zoom in", className="zoom-btn"),
+                html.Button("Fit", id="zoom-fit-btn", n_clicks=0, title="Fit all candles", className="zoom-btn"),
+                html.Button("Reset", id="zoom-reset-btn", n_clicks=0, title="Reset zoom", className="zoom-btn"),
+                html.Button("Live", id="zoom-live-btn", n_clicks=0, title="Scroll to latest", className="zoom-btn"),
+            ], className="chart-toolbar"),
+            html.Div([
+                html.Span("Indicators:", className="ind-label"),
+                dcc.Checklist(
+                    id="indicator-toggles",
+                    options=[
+                        {"label": " SMA", "value": "sma"},
+                        {"label": " EMA", "value": "ema"},
+                        {"label": " BB", "value": "bb"},
+                        {"label": " RSI", "value": "rsi"},
+                        {"label": " MACD", "value": "macd"},
+                        {"label": " Vol", "value": "volume"},
+                    ],
+                    value=["sma", "ema", "bb", "rsi", "macd", "volume"],
+                    inline=True,
+                    className="ind-checklist",
+                ),
+            ], className="indicator-bar"),
             dash_tvlwc.Tvlwc(
                 id="tv-chart",
                 series=INIT_SERIES,
                 width="100%",
-                height=480,
+                height=400,
                 chartOptions={
                     "layout": {
                         "background": {"type": "solid", "color": "#12161c"},
@@ -467,6 +590,8 @@ app.layout = html.Div([
                         "secondsVisible": False,
                     },
                 },
+                timeScaleAction={"action": "fitContent", "nonce": 1},
+                subscribeVisibleRange=True,
             ),
         ], className="panel chart-area"),
 
@@ -497,6 +622,8 @@ app.layout = html.Div([
     # Stores & interval
     dcc.Store(id="series-store", data=INIT_SERIES),
     dcc.Store(id="side-store", data="buy"),
+    dcc.Store(id="zoom-nonce", data=1),
+    dcc.Store(id="zoom-level", data=1.0),  # 1.0 = default, >1 zoomed in
     dcc.Interval(id="tick", interval=UPDATE_MS, n_intervals=0),
 ])
 
@@ -511,9 +638,19 @@ app.layout = html.Div([
     Output("header-container", "children"),
     Input("symbol-dd", "value"),
     Input("tf-dd", "value"),
+    Input("indicator-toggles", "value"),
 )
-def on_symbol_or_tf(symbol, tf):
-    series, _ = load_chart_series(symbol, tf)
+def on_symbol_or_tf(symbol, tf, toggles):
+    toggles = toggles or []
+    indicators = {
+        "sma": "sma" in toggles,
+        "ema": "ema" in toggles,
+        "bb": "bb" in toggles,
+        "rsi": "rsi" in toggles,
+        "macd": "macd" in toggles,
+        "volume": "volume" in toggles,
+    }
+    series, _ = load_chart_series(symbol, tf, indicators=indicators)
     ticker = fetch_ticker(symbol)
     header = render_header(symbol, ticker)
     return series, series, header
@@ -705,6 +842,59 @@ def _render_open_orders(symbol: str):
         ])),
         html.Tbody(rows),
     ], style={"width": "100%", "fontSize": "12px", "color": "#eaecef"})
+
+
+# ---------- Chart zoom controls ----------
+@callback(
+    Output("tv-chart", "timeScaleAction"),
+    Output("tv-chart", "visibleLogicalRange"),
+    Output("zoom-nonce", "data"),
+    Output("zoom-level", "data"),
+    Input("zoom-fit-btn", "n_clicks"),
+    Input("zoom-reset-btn", "n_clicks"),
+    Input("zoom-live-btn", "n_clicks"),
+    Input("zoom-in-btn", "n_clicks"),
+    Input("zoom-out-btn", "n_clicks"),
+    State("zoom-nonce", "data"),
+    State("zoom-level", "data"),
+    State("tv-chart", "visibleLogicalRange"),
+    State("series-store", "data"),
+    prevent_initial_call=True,
+)
+def chart_zoom(fit, reset, live, zin, zout, nonce, level, vlr, series):
+    from dash import ctx
+    trigger = ctx.triggered_id
+    nonce = (nonce or 1) + 1
+    level = level or 1.0
+    n_bars = 100
+    if series and series[0].get("data"):
+        n_bars = len(series[0]["data"])
+
+    if trigger == "zoom-fit-btn":
+        return {"action": "fitContent", "nonce": nonce}, no_update, nonce, 1.0
+
+    if trigger == "zoom-reset-btn":
+        return {"action": "resetTimeScale", "nonce": nonce}, no_update, nonce, 1.0
+
+    if trigger == "zoom-live-btn":
+        return {"action": "scrollToRealTime", "nonce": nonce}, no_update, nonce, level
+
+    # Zoom in / out via logical range
+    if trigger in ("zoom-in-btn", "zoom-out-btn"):
+        if trigger == "zoom-in-btn":
+            level = min(level * 1.4, 8.0)
+        else:
+            level = max(level / 1.4, 0.25)
+
+        # How many bars to show (zoom in = fewer bars)
+        visible = max(15, int(n_bars / level))
+        # Keep right edge at the latest bar
+        to_idx = n_bars - 1
+        from_idx = max(0, to_idx - visible)
+        return no_update, {"from": from_idx, "to": to_idx + 2}, nonce, level
+
+    return no_update, no_update, nonce, level
+
 
 if __name__ == "__main__":
     import os

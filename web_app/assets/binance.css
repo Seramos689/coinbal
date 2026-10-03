@@ -346,3 +346,212 @@ body {
   color: var(--text) !important;
   border-color: var(--border) !important;
 }
+/* ========== MOBILE / TABLET RESPONSIVE ========== */
+@media (max-width: 900px) {
+  .trading-grid {
+    display: flex;
+    flex-direction: column;
+    height: auto;
+    min-height: 100vh;
+    gap: 1px;
+  }
+
+  .chart-area {
+    order: 1;
+    width: 100%;
+    min-height: 320px;
+    height: 45vh;
+  }
+
+  .orderbook-area {
+    order: 2;
+    width: 100%;
+    max-height: 260px;
+    overflow-y: auto;
+  }
+
+  .right-column {
+    order: 3;
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .trades-area {
+    max-height: 180px;
+    flex: none;
+  }
+
+  .order-form-area {
+    min-height: 320px;
+    flex: none;
+    border-top: 1px solid var(--border);
+  }
+
+  .bottom-area {
+    order: 4;
+    width: 100%;
+    min-height: 160px;
+  }
+
+  .binance-header {
+    flex-wrap: wrap;
+    height: auto;
+    min-height: 56px;
+    gap: 10px;
+    padding: 10px 12px;
+  }
+
+  .binance-header .pair {
+    font-size: 16px;
+  }
+
+  .binance-header .price {
+    font-size: 16px;
+  }
+
+  .binance-header .stat {
+    display: none; /* hide secondary stats on small screens */
+  }
+
+  .binance-header .stat:nth-of-type(1),
+  .binance-header .stat:nth-of-type(2) {
+    display: flex; /* keep change + one balance if possible */
+  }
+}
+
+@media (max-width: 480px) {
+  .chart-area {
+    height: 40vh;
+    min-height: 280px;
+  }
+
+  .binance-header .stat {
+    display: none !important;
+  }
+
+  .order-body {
+    padding: 10px;
+  }
+
+  .btn-buy, .btn-sell {
+    padding: 16px;
+    font-size: 15px;
+  }
+}
+
+/* Chart zoom toolbar */
+.chart-area {
+  position: relative;
+}
+
+.chart-toolbar {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 20;
+  display: flex;
+  gap: 4px;
+  background: rgba(18, 22, 28, 0.85);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px;
+}
+
+.zoom-btn {
+  min-width: 36px;
+  height: 32px;
+  padding: 0 10px;
+  background: var(--bg-hover);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  line-height: 1;
+}
+
+.zoom-btn:hover {
+  background: #2b3139;
+  border-color: var(--yellow);
+  color: var(--yellow);
+}
+
+.zoom-btn:active {
+  transform: scale(0.96);
+}
+
+@media (max-width: 480px) {
+  .chart-toolbar {
+    top: 4px;
+    left: 4px;
+    gap: 2px;
+    padding: 3px;
+  }
+  .zoom-btn {
+    min-width: 32px;
+    height: 28px;
+    font-size: 13px;
+    padding: 0 8px;
+  }
+}
+
+/* Indicator toggle bar */
+.indicator-bar {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(18, 22, 28, 0.9);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 10px;
+  max-width: 70%;
+  flex-wrap: wrap;
+}
+
+.ind-label {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.ind-checklist {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  font-size: 11px;
+  color: var(--text);
+}
+
+.ind-checklist label {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  cursor: pointer;
+  margin: 0 !important;
+  color: var(--text) !important;
+}
+
+.ind-checklist input[type="checkbox"] {
+  accent-color: var(--yellow);
+  margin: 0;
+}
+
+@media (max-width: 700px) {
+  .indicator-bar {
+    top: auto;
+    bottom: 8px;
+    right: 8px;
+    left: 8px;
+    max-width: none;
+  }
+  .chart-toolbar {
+    top: 4px;
+  }
+}
